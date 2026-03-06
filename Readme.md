@@ -8,9 +8,9 @@
 ## 📑 Table of Contents
 1. Project Overview
 2. Tech Stack
-3. Architecture & Separation of Concerns
-4. Implemented Modules
-5. AI Prompt Design Explanation
+3. Architecture Overview
+4. AI Prompt Design Explanation
+5. Implemented Modules
 6. Future Modules (Roadmap)
 7. Local Setup & Installation
 8. Testing the APIs
@@ -19,7 +19,7 @@
 
 ## 🎯 Project Overview
 
-This project implements a production-ready, AI-powered backend system designed to streamline B2B sustainable commerce workflows. Built with a robust Node.js, Express, and TypeScript architecture, it leverages Google's Gemini 2.5 Flash AI to automate catalog management and proposal generation while strictly enforcing structured JSON outputs and logging all AI interactions.
+Build a production-ready, AI-powered backend system to streamline B2B sustainable commerce workflows. This project integrates Google's Gemini 2.5 Flash AI to automate catalog management and proposal generation, strictly enforcing structured JSON outputs and logging all AI interactions within a Node.js/Express and MongoDB environment.
 
 ---
 
@@ -33,82 +33,54 @@ This project implements a production-ready, AI-powered backend system designed t
 
 ---
 
-## 📐 Architecture & Separation of Concerns
+## 📐 Architecture Overview
 
-The project follows a clean, modular architecture separating standard business routing from complex AI generation logic:
+The application follows a clean, modular backend architecture to ensure a strict separation of concerns between standard API routing, database operations, and AI generation logic.
 
-* **`/routes`**: Defines API endpoints and handles HTTP request/response cycles.
-* **`/models`**: Contains Mongoose schemas (`Product`, `Proposal`, `AILog`) ensuring data integrity before database insertion.
-* **`/services/aiService.ts`**: The dedicated AI engine. It isolates the `@google/generative-ai` SDK, securely manages the API key, constructs the prompts, and parses the LLM responses. This ensures standard business controllers remain lightweight and agnostic to the underlying AI implementation.
-
----
-
-## 🚀 Implemented Modules
-
-### Module 1: AI Auto-Category & Tag Generator
-
-**Endpoint:** `POST /api/products/auto-categorize`
-
-**Functionality:** Takes a raw product name and description and automatically categorizes it.
-
-**Features:**
-* Assigns a primary category strictly from a predefined business list.
-* Generates optimized SEO tags and relevant sustainability filters (e.g., vegan, compostable).
-* Returns structured JSON and saves the newly categorized product to the MongoDB `Product` collection.
-
----
-
-### Module 2: AI B2B Proposal Generator
-
-**Endpoint:** `POST /api/proposals/generate`
-
-**Functionality:** Generates a tailored, sustainable product mix based on a client's specific budget and industry.
-
-**Features:**
-* LLM enforces mathematical constraints to ensure the `allocatedBudget` is less than or equal to the `totalBudget`.
-* Calculates a cost breakdown (`quantity` * `unitCost` = `totalCost`).
-* Generates a human-readable impact positioning summary.
-* Returns structured JSON and saves to the MongoDB `Proposal` collection.
-
----
-
-### 🛡️ Core Requirement: Mandatory AI Logging
-
-To ensure transparency and traceability, every single prompt sent to the LLM and the raw response received are automatically saved to an `AILog` collection in MongoDB before the data is returned to the user.
+* **`/routes` (The Entry Point):** Handles incoming HTTP POST requests, validates the presence of required body parameters (like `clientName` or `budget`), and routes the data to the appropriate service.
+* **`/services/aiService.ts` (The AI Engine):** This isolated file manages the Google Gemini SDK. By keeping AI logic here, the rest of the application remains completely agnostic to the specific LLM being used. It handles prompt construction, API key security, and JSON parsing.
+* **`/models` (Data Integrity):** Mongoose schemas (`Product`, `Proposal`, and `AILog`) enforce strict TypeScript interfaces before anything is written to the MongoDB database.
+* **Mandatory AI Auditing:** A core architectural decision was implementing an interception layer in `aiService.ts`. Before any AI data is returned to the client, the raw prompt and the LLM's response are automatically written to an `AILog` MongoDB collection to maintain a system-wide audit trail.
 
 ---
 
 ## 🧠 AI Prompt Design Explanation
 
-### Structured JSON Enforcement
+Getting an LLM to reliably return data that a database can ingest requires strict guardrails. This project uses three specific prompt engineering techniques:
 
-Instead of relying purely on prompt instructions to format the output, this system utilizes the native API configuration `generationConfig: { responseMimeType: "application/json" }`. This forces the Gemini model to return parseable JSON, drastically reducing the risk of application crashes due to malformed string responses.
+1. **System-Level JSON Enforcement:** Instead of just asking the AI to "return JSON," the system utilizes Gemini's `generationConfig: { responseMimeType: "application/json" }`. This forces the model's output layer to physically constrain its response to valid JSON syntax.
+
+2. **Constraint-Based Prompting:** For mathematical operations (Module 2), the prompt establishes rigid, non-negotiable boundaries (e.g., *"The total cost of all products MUST be less than or equal to the maximum budget"*).
+
+3. **Few-Shot Concrete Examples:** To prevent the AI from generating syntax errors (like missing quotes or adding markdown blockticks), the prompt provides a perfectly formatted, hard-coded JSON example for the LLM to mirror.
 
 ---
 
-### Prompt Strategies
+## 🚀 Implemented Modules (Code Provided)
 
-**Module 1 (Categorization):** Utilizes **Context Injection**  
-The prompt injects a predefined array of allowed categories directly into the prompt string, forcing the LLM to select from actual business logic parameters rather than hallucinating new categories.
+### Module 1: AI Auto-Category & Tag Generator
 
-**Module 2 (Proposals):** Utilizes **Constraint-Based Prompting**  
-The prompt establishes strict boundaries (*"total cost MUST be less than or equal to the maximum budget"*) and provides a rigid JSON template for the LLM to fill in, ensuring the mathematical output aligns with the schema requirements.
+* **Flow:** `POST /api/products/auto-categorize` -> `aiService.generateProductMetadata` -> Saves to `Product` DB.
+* **Prompt Strategy (Context Injection):** The prompt injects a predefined array of allowed business categories natively into the string. This zero-shot approach forces the LLM to categorize the product using actual business parameters rather than hallucinating new, unsupported categories.
+
+### Module 2: AI B2B Proposal Generator
+
+* **Flow:** `POST /api/proposals/generate` -> `aiService.generateB2BProposal` -> Saves to `Proposal` DB.
+* **Prompt Strategy (Few-Shot & Schema Mapping):** The LLM acts as a sales assistant. It is provided with a strict JSON template containing calculated fields (`unitCost` * `quantity` = `totalCost`) and a predefined impact summary field, ensuring the output maps perfectly to the `IProposal` TypeScript interface.
 
 ---
 
 ## 🔮 Architecture Outlines (Remaining Modules)
 
 ### Module 3: AI Impact Reporting Generator
-* **Trigger:** An internal webhook or event listener triggered when an order is marked as "Shipped/Completed".
-* **Data Flow:** The backend queries the order details. `aiService.ts` receives the product list, materials, and quantities.
-* **Prompt Strategy (Few-Shot):** The prompt will contain baseline conversion metrics (e.g., *“1 standard plastic item = 0.5kg carbon. 1 bamboo item = 0.05kg carbon”*). The LLM calculates the deltas and generates the impact statement.
-* **Storage:** The resulting JSON is embedded directly into the order record in the database.
+
+* **Architecture:** Operates via an asynchronous event listener. When an order's status changes to "Completed" in the database, a webhook triggers the backend. The system fetches the order's product mix and passes the material breakdown to the AI service. The generated impact JSON is stored directly inside the `Order` document.
+* **Prompt Design (Rule-Based):** The prompt injects baseline conversion metrics (e.g., *"Assume 1 standard plastic item = 0.5kg of carbon"*). The LLM is tasked purely with calculating the deltas based on these injected rules and returning `{ "plasticSavedKg": Number, "carbonAvoidedKg": Number, "impactStatement": String }`.
 
 ### Module 4: AI WhatsApp Support Bot
-* **Trigger:** Meta WhatsApp Business API webhook `POST` endpoint.
-* **Data Flow (RAG):** When a message arrives, the backend extracts the user's phone number, queries MongoDB for active orders, and retrieves the standard return policy. 
-* **Prompt Strategy (Roleplay & Guardrails):** The LLM is given a strict persona and injected with the user's live database context. It is instructed to output a specific trigger word (e.g., `ESCALATE_TO_HUMAN`) if the intent matches "refund" or "complaint".
-* **Business Logic Routing:** If the Express controller detects `ESCALATE_TO_HUMAN` in the LLM response, it bypasses the automated reply, updates a `SupportTicket` status in MongoDB, and notifies an agent. All conversations are stored in a `WhatsAppLog` schema.
+
+* **Architecture (RAG):** Uses the Meta WhatsApp Business API. Incoming webhooks hit an Express controller. The backend extracts the user's phone number, queries MongoDB for their active orders, and retrieves the standard return policy.
+* **Prompt Design (Roleplay & Escalation Guardrails):** The LLM acts as a support bot, injected with the user's live database context. It is strictly bounded: *"Answer politely using ONLY the provided order data. If the user mentions 'refund' or 'angry', do not answer. Output exactly: `ESCALATE_TO_HUMAN`."* The backend listens for this exact string to bypass the bot and route the ticket to a human queue.
 
 ---
 
@@ -124,7 +96,7 @@ npm install
 
 ### 2. Configure Environment Variables
 
-Create a `.env` file in the root directory and add:
+Create a `.env` file in the root directory:
 
 ```
 PORT=5000
@@ -132,45 +104,17 @@ MONGO_URI=your_mongodb_connection_string
 GEMINI_API_KEY=your_google_gemini_api_key
 ```
 
-### 3. Run the Development Server
+### 3. Start the Server
 
 ```bash
 npm run dev
 ```
 
-The server will start at `http://localhost:5000`.
-
 ---
 
 ## 🧪 Testing the APIs
 
-You can test the endpoints using Postman, cURL, or Thunder Client.
+Send POST requests via Postman or Thunder Client to the following endpoints with valid JSON body payloads:
 
-### Test Module 1: AI Auto-Category & Tag Generator
-
-**Request:**
-
-```http
-POST /api/products/auto-categorize
-Content-Type: application/json
-
-{
-  "name": "Bamboo Coffee Cup",
-  "description": "A reusable coffee cup made from organic bamboo fiber. It is dishwasher safe and biodegradable."
-}
-```
-
-### Test Module 2: AI B2B Proposal Generator
-
-**Request:**
-
-```http
-POST /api/proposals/generate
-Content-Type: application/json
-
-{
-  "clientName": "GreenTech Solutions",
-  "budget": 1500,
-  "industry": "Corporate Office"
-}
-```
+* `http://localhost:5000/api/products/auto-categorize`
+* `http://localhost:5000/api/proposals/generate`
