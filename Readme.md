@@ -117,7 +117,7 @@ The prompt establishes strict boundaries (*"total cost MUST be less than or equa
 ### 1. Clone the Repository and Install Dependencies
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/The-morning-star23/rayeva-ai-system.git
 cd rayeva-ai-system
 npm install
 ```
