@@ -48,12 +48,12 @@ export const generateProductMetadata = async (productName: string, description: 
 };
 
 export const generateB2BProposal = async (clientName: string, budget: number, industry: string) => {
-  // Use the exact same model string that worked for you in Module 1
   const model = genAI.getGenerativeModel({ 
     model: "gemini-2.5-flash", 
     generationConfig: { responseMimeType: "application/json" } 
   });
 
+  // Updated prompt with a strict, concrete example to prevent syntax errors
   const prompt = `
     You are an AI sales assistant for a sustainable B2B e-commerce platform.
     Generate a product proposal for a client.
@@ -64,26 +64,36 @@ export const generateB2BProposal = async (clientName: string, budget: number, in
 
     Create a sustainable product mix. The total cost of all products MUST be less than or equal to the maximum budget.
     
-    Return STRICTLY a JSON object with this structure:
+    Return STRICTLY valid JSON. Do not include markdown formatting, comments, or trailing commas. 
+    Use this EXACT structure as your template:
     {
-      "allocatedBudget": <number representing the total sum of all product costs>,
+      "allocatedBudget": 450,
       "productMix": [
         {
-          "name": "<Sustainable product name>",
-          "quantity": <number>,
-          "unitCost": <number>,
-          "totalCost": <number, which is quantity * unitCost>
+          "name": "Recycled Aluminum Pen",
+          "quantity": 100,
+          "unitCost": 2.50,
+          "totalCost": 250
+        },
+        {
+          "name": "Bamboo Desk Organizer",
+          "quantity": 10,
+          "unitCost": 20,
+          "totalCost": 200
         }
       ],
-      "impactSummary": "<A 2-sentence summary of the environmental impact of choosing these specific sustainable products>"
+      "impactSummary": "By choosing these sustainable alternatives, you saved an estimated 10kg of plastic."
     }
   `;
 
   try {
     const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
+    let responseText = result.response.text();
 
-    // Log the AI interaction for the assignment requirements
+    // Clean up any rogue markdown just in case
+    responseText = responseText.replace(/```json/gi, "").replace(/```/gi, "").trim();
+
+    // Log the AI interaction
     await AILog.create({
       module: "B2B Proposal Generator",
       prompt: prompt,
